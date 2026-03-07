@@ -23,8 +23,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   const fetchRole = async (userId: string) => {
-    const { data } = await supabase.rpc('get_user_role', { _user_id: userId });
-    setRole((data as UserRole) || 'patient');
+    const { data } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId)
+      .single();
+    setRole((data?.role as UserRole) || 'patient');
   };
 
   useEffect(() => {
