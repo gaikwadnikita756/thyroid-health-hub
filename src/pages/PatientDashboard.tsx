@@ -22,6 +22,7 @@ interface Report {
   t4: number | null;
   ai_prediction: string | null;
   ai_confidence: number | null;
+  ai_notes: string | null;
   status: string;
   created_at: string;
 }
