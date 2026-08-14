@@ -12,24 +12,21 @@ const LoginPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { signIn, role } = useAuth();
+  const { signIn } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const { error } = await signIn(email, password);
+    const { error, role: signedRole } = await signIn(email, password);
     setLoading(false);
     if (error) {
       toast({ title: 'Login failed', description: error.message, variant: 'destructive' });
     } else {
       toast({ title: 'Welcome back!' });
-      // Navigate based on role after a short delay for role to load
-      setTimeout(() => {
-        if (role === 'doctor') navigate('/doctor/dashboard');
-        else if (role === 'admin') navigate('/admin/dashboard');
-        else navigate('/patient/dashboard');
-      }, 500);
+      if (signedRole === 'doctor') navigate('/doctor/dashboard');
+      else if (signedRole === 'admin') navigate('/admin/dashboard');
+      else navigate('/patient/dashboard');
     }
   };
 

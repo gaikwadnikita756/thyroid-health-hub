@@ -7,7 +7,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 
 type Tab = 'overview' | 'patients' | 'appointments';
@@ -26,37 +25,109 @@ interface Report {
   created_at: string;
 }
 
+interface Appointment {
+  id: string;
+  appointmentDate: string;
+  reason: string | null;
+  status: string;
+  notes: string | null;
+  patient: {
+    user: {
+      id: string;
+      fullName: string;
+      email: string;
+    };
+  };
+}
+
 const DoctorDashboard: React.FC = () => {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('overview');
   const [reports, setReports] = useState<Report[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [appointmentUpdates, setAppointmentUpdates] = useState<Record<string, { appointmentDate: string; appointmentTime: string; notes: string }>>({});
 
   useEffect(() => {
     if (!user) { navigate('/login'); return; }
     loadReports();
+    loadDoctorAppointments();
   }, [user]);
 
   const loadReports = async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any)
-      .from('lab_reports')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(50);
-    if (data) setReports(data);
+    try {
+      const response = await fetch('http://localhost:3001/api/doctor/reports');
+      if (response.ok) {
+        const data = await response.json();
+        setReports(data);
+      }
+    } catch (error) {
+      console.error('Error loading reports:', error);
+    }
+  };
+
+  const loadDoctorAppointments = async () => {
+    try {
+      const response = await fetch(`http://localhost:3001/api/doctors/${user?.id}/appointments`);
+      if (response.ok) {
+        const data = await response.json();
+        setAppointments(data);
+      }
+    } catch (error) {
+      console.error('Error loading appointments:', error);
+    }
   };
 
   const updateReport = async (id: string, approved: boolean) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any).from('lab_reports').update({
-      doctor_notes: notes[id] || null,
-      doctor_id: user?.id,
-      status: approved ? 'doctor_approved' : 'doctor_reviewed',
-    }).eq('id', id);
-    if (error) toast({ title: 'Error', description: error.message, variant: 'destructive' });
-    else { toast({ title: approved ? 'Approved & saved' : 'Reviewed & saved' }); loadReports(); }
+    try {
+      const response = await fetch(`http://localhost:3001/api/tests/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          notes: notes[id] || null,
+          status: approved ? 'doctor_approved' : 'doctor_reviewed',
+        }),
+      });
+      if (response.ok) {
+        toast({ title: approved ? 'Approved & saved' : 'Reviewed & saved' });
+        loadReports();
+      } else {
+        toast({ title: 'Error', description: 'Failed to update report', variant: 'destructive' });
+      }
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to update report', variant: 'destructive' });
+    }
+  };
+
+  const updateAppointment = async (appointmentId: string, confirmed: boolean) => {
+    try {
+      const current = appointmentUpdates[appointmentId];
+      if (!current) return;
+
+      const appointmentDateTime = current.appointmentDate && current.appointmentTime
+        ? `${current.appointmentDate}T${current.appointmentTime}`
+        : undefined;
+
+      const response = await fetch(`http://localhost:3001/api/appointments/${appointmentId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: confirmed ? 'confirmed' : 'cancelled',
+          notes: current.notes || null,
+          appointmentDate: appointmentDateTime,
+        }),
+      });
+      if (response.ok) {
+        toast({ title: confirmed ? 'Appointment confirmed' : 'Appointment cancelled' });
+        setAppointmentUpdates((prev) => ({ ...prev, [appointmentId]: { ...prev[appointmentId], notes: '' } }));
+        loadDoctorAppointments();
+      } else {
+        toast({ title: 'Error', description: 'Failed to update appointment', variant: 'destructive' });
+      }
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to update appointment', variant: 'destructive' });
+    }
   };
 
   const navItems = [
@@ -215,10 +286,83 @@ const DoctorDashboard: React.FC = () => {
         {tab === 'appointments' && (
           <div className="animate-fade-in">
             <h1 className="font-display text-2xl font-bold mb-6">Appointments</h1>
-            <div className="medical-card text-center py-12">
-              <Calendar className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="font-semibold text-foreground mb-2">Appointment Management</h3>
-              <p className="text-sm text-muted-foreground">Patient appointments will appear here once booked through the patient portal.</p>
+
+            <div className="medical-card mb-6">
+              <h2 className="font-semibold text-lg mb-3">Pending appointment requests</h2>
+              {appointments.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">No appointment requests yet.</div>
+              ) : (
+                <div className="space-y-4">
+                  {appointments.map((appointment) => {
+                    const update = appointmentUpdates[appointment.id] || {
+                      appointmentDate: appointment.appointmentDate.split('T')[0],
+                      appointmentTime: appointment.appointmentDate.split('T')[1]?.slice(0, 5) || '',
+                      notes: appointment.notes || '',
+                    };
+                    return (
+                      <div key={appointment.id} className="p-4 border border-border rounded-lg bg-muted/30">
+                        <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+                          <div>
+                            <p className="text-sm font-medium">Patient: {appointment.patient.user.fullName}</p>
+                            <p className="text-xs text-muted-foreground">{appointment.patient.user.email}</p>
+                            <p className="text-xs text-muted-foreground mt-2">Requested for {new Date(appointment.appointmentDate).toLocaleString()}</p>
+                            <p className="text-xs text-muted-foreground">Reason: {appointment.reason || 'Not provided'}</p>
+                          </div>
+                          <span className={`text-xs px-2 py-1 rounded-full ${appointment.status === 'confirmed' ? 'bg-secondary/15 text-secondary' : appointment.status === 'requested' ? 'bg-warning/15 text-warning' : 'bg-destructive/15 text-destructive'}`}>
+                            {appointment.status}
+                          </span>
+                        </div>
+
+                        <div className="grid sm:grid-cols-3 gap-4 mb-4">
+                          <div>
+                            <Label className="mb-1 block text-sm">Confirm date</Label>
+                            <Input
+                              type="date"
+                              value={update.appointmentDate}
+                              onChange={(e) => setAppointmentUpdates((prev) => ({
+                                ...prev,
+                                [appointment.id]: { ...update, appointmentDate: e.target.value },
+                              }))}
+                            />
+                          </div>
+                          <div>
+                            <Label className="mb-1 block text-sm">Confirm time</Label>
+                            <Input
+                              type="time"
+                              value={update.appointmentTime}
+                              onChange={(e) => setAppointmentUpdates((prev) => ({
+                                ...prev,
+                                [appointment.id]: { ...update, appointmentTime: e.target.value },
+                              }))}
+                            />
+                          </div>
+                          <div className="sm:col-span-3">
+                            <Label className="mb-1 block text-sm">Doctor notes</Label>
+                            <Textarea
+                              rows={2}
+                              value={update.notes}
+                              onChange={(e) => setAppointmentUpdates((prev) => ({
+                                ...prev,
+                                [appointment.id]: { ...update, notes: e.target.value },
+                              }))}
+                              placeholder="Add appointment confirmation notes..."
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-3">
+                          <Button size="sm" className="gap-2" onClick={() => updateAppointment(appointment.id, true)}>
+                            <CheckCircle2 className="w-4 h-4" /> Confirm
+                          </Button>
+                          <Button size="sm" variant="outline" className="gap-2" onClick={() => updateAppointment(appointment.id, false)}>
+                            <XCircle className="w-4 h-4" /> Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}

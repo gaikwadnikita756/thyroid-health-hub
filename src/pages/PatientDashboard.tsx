@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   Activity, User, FileText, Calendar, Brain, LogOut,
-  Upload, TrendingUp, TrendingDown, AlertCircle, Clock, Plus, LayoutDashboard
+  Upload, TrendingUp, TrendingDown, AlertCircle, Clock, Plus, LayoutDashboard,
+  CheckCircle, RefreshCw, Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,8 +11,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import ReportUpload from '@/components/ReportUpload';
 
 type Tab = 'overview' | 'profile' | 'reports' | 'appointments' | 'ai';
 
@@ -24,7 +25,24 @@ interface Report {
   ai_confidence: number | null;
   ai_notes: string | null;
   status: string;
-  created_at: string;
+  createdAt?: string;
+  created_at?: string;
+  fileName?: string;
+  fileUrl?: string | null;
+}
+
+interface Appointment {
+  id: string;
+  status: 'requested' | 'confirmed' | 'cancelled';
+  appointmentDate: string;
+  reason: string;
+  notes?: string;
+  doctor?: {
+    user?: {
+      fullName: string;
+      email: string;
+    };
+  };
 }
 
 const PredictionBadge: React.FC<{ prediction: string | null }> = ({ prediction }) => {
@@ -52,109 +70,135 @@ const ConfidenceBar: React.FC<{ value: number | null }> = ({ value }) => {
 const PatientDashboard: React.FC = () => {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const [authReady, setAuthReady] = useState(false);
   const [tab, setTab] = useState<Tab>('overview');
   const [reports, setReports] = useState<Report[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [profileData, setProfileData] = useState({ full_name: '', age: '', gender: '', phone: '', medical_history: '' });
-  const [labData, setLabData] = useState({ tsh: '', t3: '', t4: '', tpo_antibodies: '' });
   const [appointmentData, setAppointmentData] = useState({ date: '', time: '', reason: '' });
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [reportsLoading, setReportsLoading] = useState(false);
+
+  const loadReports = useCallback(async () => {
+    if (!user?.id) return;
+    setReportsLoading(true);
+    try {
+      const response = await fetch(`http://localhost:3001/api/patient/${user.id}/reports`);
+      if (response.ok) {
+        const data = await response.json();
+        setReports(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error('Error loading reports:', err);
+      toast({ title: 'Error loading reports', variant: 'destructive' });
+    } finally {
+      setReportsLoading(false);
+    }
+  }, [user?.id]);
 
   useEffect(() => {
-    if (!user) { navigate('/login'); return; }
+    setAuthReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!authReady) return;
+    if (!user) {
+      navigate('/login');
+      return;
+    }
     loadReports();
     loadProfile();
-  }, [user]);
+    loadAppointments();
+  }, [authReady, user, loadReports]);
 
-  const loadReports = async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any).from('lab_reports').select('*').eq('patient_id', user?.id).order('created_at', { ascending: false });
-    if (data) setReports(data);
+  const loadAppointments = async () => {
+    try {
+      const response = await fetch(`http://localhost:3001/api/patients/${user?.id}/appointments`);
+      if (response.ok) {
+        const data = await response.json();
+        setAppointments(data);
+      }
+    } catch (err) {
+      console.error('Error loading appointments:', err);
+      toast({ title: 'Error loading appointments', variant: 'destructive' });
+    }
+  };
+
+  const refreshAppointments = async () => {
+    setRefreshing(true);
+    await loadAppointments();
+    setRefreshing(false);
+    toast({ title: 'Appointments refreshed!' });
   };
 
   const loadProfile = async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any).from('profiles').select('*').eq('user_id', user?.id).single();
-    if (data) setProfileData({ full_name: data.full_name || '', age: data.age?.toString() || '', gender: data.gender || '', phone: data.phone || '', medical_history: data.medical_history || '' });
+    try {
+      const response = await fetch(`http://localhost:3001/api/patient/${user?.id}/profile`);
+      if (response.ok) {
+        const data = await response.json();
+        setProfileData({
+          full_name: data.fullName || '',
+          age: data.age?.toString() || '',
+          gender: data.gender || '',
+          phone: data.phoneNumber || '',
+          medical_history: data.medical_history || ''
+        });
+      }
+    } catch (error) {
+      console.error('Error loading profile:', error);
+    }
   };
 
   const saveProfile = async () => {
     setLoading(true);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any).from('profiles').upsert({
-      user_id: user?.id,
-      full_name: profileData.full_name,
-      age: parseInt(profileData.age) || null,
-      gender: profileData.gender,
-      phone: profileData.phone,
-      medical_history: profileData.medical_history,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id' });
-    setLoading(false);
-    if (error) toast({ title: 'Error saving profile', description: error.message, variant: 'destructive' });
-    else toast({ title: 'Profile saved!' });
-  };
-
-  const submitLabReport = async () => {
-    if (!labData.tsh) { toast({ title: 'TSH value is required', variant: 'destructive' }); return; }
-    setLoading(true);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: report, error } = await (supabase as any).from('lab_reports').insert({
-      patient_id: user?.id,
-      tsh: parseFloat(labData.tsh),
-      t3: labData.t3 ? parseFloat(labData.t3) : null,
-      t4: labData.t4 ? parseFloat(labData.t4) : null,
-      tpo_antibodies: labData.tpo_antibodies ? parseFloat(labData.tpo_antibodies) : null,
-      status: 'pending',
-    }).select().single();
-
-    if (error) { toast({ title: 'Error submitting report', description: error.message, variant: 'destructive' }); setLoading(false); return; }
-
-    // Run AI prediction
     try {
-      const aiRes = await supabase.functions.invoke('thyroid-ai-screening', {
-        body: {
-          lab_values: {
-            tsh: parseFloat(labData.tsh),
-            t3: labData.t3 ? parseFloat(labData.t3) : null,
-            t4: labData.t4 ? parseFloat(labData.t4) : null,
-          },
-          mode: 'lab_prediction',
-        },
+      const response = await fetch(`http://localhost:3001/api/patient/${user?.id}/profile`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: profileData.full_name,
+          age: parseInt(profileData.age) || null,
+          gender: profileData.gender,
+          phoneNumber: profileData.phone,
+          medical_history: profileData.medical_history,
+        }),
       });
-      if (aiRes.data && report?.id) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase as any).from('lab_reports').update({
-          ai_prediction: aiRes.data.prediction,
-          ai_confidence: aiRes.data.confidence,
-          ai_notes: aiRes.data.notes,
-          status: 'ai_analyzed',
-        }).eq('id', report.id);
+      if (response.ok) {
+        toast({ title: 'Profile saved!' });
+      } else {
+        toast({ title: 'Error saving profile', variant: 'destructive' });
       }
-    } catch (aiErr) {
-      console.error('AI analysis failed:', aiErr);
+    } catch (error) {
+      toast({ title: 'Error saving profile', variant: 'destructive' });
     }
-
     setLoading(false);
-    setLabData({ tsh: '', t3: '', t4: '', tpo_antibodies: '' });
-    loadReports();
-    toast({ title: 'Lab report submitted!', description: 'AI analysis running...' });
-    setTab('reports');
   };
 
   const bookAppointment = async () => {
     if (!appointmentData.date || !appointmentData.time) { toast({ title: 'Date and time required', variant: 'destructive' }); return; }
     setLoading(true);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any).from('appointments').insert({
-      patient_id: user?.id,
-      appointment_date: appointmentData.date,
-      appointment_time: appointmentData.time,
-      reason: appointmentData.reason,
-      status: 'scheduled',
-    });
+    try {
+      const response = await fetch('http://localhost:3001/api/appointments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patientId: user?.id,
+          appointmentDate: new Date(`${appointmentData.date}T${appointmentData.time}`),
+          reason: appointmentData.reason,
+        }),
+      });
+      if (response.ok) {
+        toast({ title: 'Appointment requested!' });
+        setAppointmentData({ date: '', time: '', reason: '' });
+        loadAppointments();
+      } else {
+        toast({ title: 'Error booking appointment', variant: 'destructive' });
+      }
+    } catch (error) {
+      toast({ title: 'Error booking appointment', variant: 'destructive' });
+    }
     setLoading(false);
-    if (error) toast({ title: 'Error booking appointment', description: error.message, variant: 'destructive' });
-    else { toast({ title: 'Appointment booked!' }); setAppointmentData({ date: '', time: '', reason: '' }); }
   };
 
   const navItems = [
@@ -257,7 +301,7 @@ const PatientDashboard: React.FC = () => {
                       <div key={r.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
                         <div>
                           <div className="text-sm font-medium">TSH: {r.tsh?.toFixed(2)} | T3: {r.t3?.toFixed(2) ?? 'N/A'} | T4: {r.t4?.toFixed(2) ?? 'N/A'}</div>
-                          <div className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleDateString()}</div>
+                          <div className="text-xs text-muted-foreground">{new Date(r.createdAt || r.created_at).toLocaleDateString()}</div>
                         </div>
                         <div className="flex items-center gap-3">
                           <PredictionBadge prediction={r.ai_prediction} />
@@ -326,40 +370,18 @@ const PatientDashboard: React.FC = () => {
           {tab === 'reports' && (
             <div className="animate-fade-in">
               <h1 className="font-display text-2xl font-bold text-foreground mb-6">Lab Reports</h1>
-              <div className="medical-card max-w-xl mb-8">
-                <h2 className="font-semibold text-lg mb-4 flex items-center gap-2">
-                  <Upload className="w-5 h-5 text-primary" />Submit New Report
-                </h2>
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label className="mb-1 block">TSH (mIU/L) *</Label>
-                      <Input type="number" step="0.01" value={labData.tsh} onChange={(e) => setLabData({ ...labData, tsh: e.target.value })} placeholder="e.g. 2.5" />
-                    </div>
-                    <div>
-                      <Label className="mb-1 block">Free T3 (pg/mL)</Label>
-                      <Input type="number" step="0.01" value={labData.t3} onChange={(e) => setLabData({ ...labData, t3: e.target.value })} placeholder="e.g. 3.2" />
-                    </div>
-                    <div>
-                      <Label className="mb-1 block">Free T4 (ng/dL)</Label>
-                      <Input type="number" step="0.01" value={labData.t4} onChange={(e) => setLabData({ ...labData, t4: e.target.value })} placeholder="e.g. 1.2" />
-                    </div>
-                    <div>
-                      <Label className="mb-1 block">TPO Antibodies (IU/mL)</Label>
-                      <Input type="number" step="0.1" value={labData.tpo_antibodies} onChange={(e) => setLabData({ ...labData, tpo_antibodies: e.target.value })} placeholder="e.g. 20" />
-                    </div>
-                  </div>
-                  <div className="bg-accent rounded-lg p-3 text-xs text-foreground">
-                    Normal ranges — TSH: 0.4–4.0 | Free T3: 2.3–4.2 | Free T4: 0.8–1.8
-                  </div>
-                  <Button onClick={submitLabReport} disabled={loading} className="w-full">
-                    {loading ? 'Submitting & Analyzing...' : '🧠 Submit & Analyze with AI'}
-                  </Button>
-                </div>
-              </div>
+              {user?.id && <ReportUpload patientId={user.id} onUploadSuccess={loadReports} />}
 
-              <div className="space-y-3">
-                <h2 className="font-semibold text-lg">Report History</h2>
+              <div className="space-y-3 mt-12">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="font-semibold text-lg">Report History</h2>
+                  {reportsLoading && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Refreshing reports...
+                    </div>
+                  )}
+                </div>
                 {reports.length === 0 ? (
                   <div className="text-muted-foreground text-sm text-center py-8">No reports yet.</div>
                 ) : (
@@ -368,13 +390,19 @@ const PatientDashboard: React.FC = () => {
                       <div className="flex flex-wrap items-start justify-between gap-4">
                         <div>
                           <div className="flex items-center gap-3 mb-2">
-                            <PredictionBadge prediction={r.ai_prediction} />
-                            <span className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleDateString()}</span>
+                            {r.ai_prediction && <PredictionBadge prediction={r.ai_prediction} />}
+                            <span className="text-xs text-muted-foreground">{new Date(r.createdAt || r.created_at).toLocaleDateString()}</span>
+                            {r.fileName && <span className="text-xs text-muted-foreground">📄 {r.fileName}</span>}
+                            {r.fileUrl && (
+                              <a href={r.fileUrl} target="_blank" rel="noreferrer" className="text-primary text-xs underline">
+                                View report
+                              </a>
+                            )}
                           </div>
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                            <div><span className="text-muted-foreground">TSH:</span> <strong>{r.tsh?.toFixed(2) ?? '—'}</strong></div>
-                            <div><span className="text-muted-foreground">T3:</span> <strong>{r.t3?.toFixed(2) ?? '—'}</strong></div>
-                            <div><span className="text-muted-foreground">T4:</span> <strong>{r.t4?.toFixed(2) ?? '—'}</strong></div>
+                            <div><span className="text-muted-foreground">TSH:</span> <strong>{(r.tsh)?.toFixed(2) ?? '—'}</strong></div>
+                            <div><span className="text-muted-foreground">T3:</span> <strong>{(r.t3)?.toFixed(2) ?? '—'}</strong></div>
+                            <div><span className="text-muted-foreground">T4:</span> <strong>{(r.t4)?.toFixed(2) ?? '—'}</strong></div>
                           </div>
                         </div>
                         {r.ai_confidence && <ConfidenceBar value={r.ai_confidence} />}
@@ -394,8 +422,16 @@ const PatientDashboard: React.FC = () => {
           {/* Appointments */}
           {tab === 'appointments' && (
             <div className="animate-fade-in">
-              <h1 className="font-display text-2xl font-bold text-foreground mb-6">Book Appointment</h1>
-              <div className="medical-card max-w-xl">
+              <div className="flex items-center justify-between mb-6">
+                <h1 className="font-display text-2xl font-bold text-foreground">Appointment Requests</h1>
+                <Button size="sm" variant="outline" onClick={refreshAppointments} disabled={refreshing} className="gap-2">
+                  <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+              </div>
+
+              <div className="medical-card mb-6">
+                <h2 className="font-semibold text-lg mb-3">Request a new appointment</h2>
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -412,8 +448,67 @@ const PatientDashboard: React.FC = () => {
                     <Textarea rows={3} value={appointmentData.reason} onChange={(e) => setAppointmentData({ ...appointmentData, reason: e.target.value })} placeholder="Describe your symptoms or reason..." />
                   </div>
                   <Button onClick={bookAppointment} disabled={loading} className="w-full">
-                    <Calendar className="w-4 h-4 mr-2" />Book Appointment
+                    <Calendar className="w-4 h-4 mr-2" />Request Appointment
                   </Button>
+                </div>
+              </div>
+
+              <div className="grid gap-4">
+                {appointments.length > 0 && appointments.some(a => a.status === 'confirmed') && (
+                  <div className="medical-card border-2 border-secondary/50 bg-secondary/10">
+                    <div className="flex items-center gap-3 mb-3">
+                      <CheckCircle className="w-5 h-5 text-secondary" />
+                      <h2 className="font-semibold text-lg text-secondary">✓ Appointment Confirmed</h2>
+                    </div>
+                    {appointments.filter(a => a.status === 'confirmed')[0] && (
+                      <div className="space-y-2 text-sm">
+                        <p className="font-medium text-foreground">Your appointment has been confirmed by the doctor.</p>
+                        <p><strong>📅 Date & Time:</strong> {new Date(appointments.filter(a => a.status === 'confirmed')[0].appointmentDate).toLocaleString()}</p>
+                        <p><strong>👨‍⚕️ Doctor:</strong> {appointments.filter(a => a.status === 'confirmed')[0].doctor?.user?.fullName || appointments.filter(a => a.status === 'confirmed')[0].doctor?.user?.email || 'Assigned doctor'}</p>
+                        <p><strong>📝 Reason:</strong> {appointments.filter(a => a.status === 'confirmed')[0].reason || 'No reason provided'}</p>
+                        {appointments.filter(a => a.status === 'confirmed')[0].notes && <p className="mt-2 p-2 bg-background rounded text-muted-foreground"><strong>Doctor notes:</strong> {appointments.filter(a => a.status === 'confirmed')[0].notes}</p>}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {appointments.length > 0 && appointments.some(a => a.status === 'requested') && (
+                  <div className="medical-card border-warning/20 bg-warning/5">
+                    <h2 className="font-semibold text-lg mb-3 flex items-center gap-2">
+                      <Clock className="w-4 h-4" />
+                      Pending Review
+                    </h2>
+                    {appointments.filter(a => a.status === 'requested')[0] && (
+                      <div className="space-y-2 text-sm">
+                        <p className="font-medium">Your appointment request is awaiting doctor confirmation.</p>
+                        <p><strong>Requested for:</strong> {new Date(appointments.filter(a => a.status === 'requested')[0].appointmentDate).toLocaleString()}</p>
+                        <p><strong>Reason:</strong> {appointments.filter(a => a.status === 'requested')[0].reason || 'No reason provided'}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="medical-card">
+                  <h2 className="font-semibold text-lg mb-4">All Appointments</h2>
+                  {appointments.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">No appointments yet.</div>
+                  ) : (
+                    <div className="space-y-3">
+                      {appointments.map((appointment) => (
+                        <div key={appointment.id} className={`p-4 border rounded-lg ${appointment.status === 'confirmed' ? 'bg-secondary/5 border-secondary/30' : appointment.status === 'requested' ? 'bg-warning/5 border-warning/30' : 'bg-destructive/5 border-destructive/30'}`}>
+                          <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+                            <div>
+                              <p className="font-medium">{appointment.doctor?.user?.fullName || appointment.doctor?.user?.email || 'Doctor assigned'}</p>
+                              <p className="text-xs text-muted-foreground">{new Date(appointment.appointmentDate).toLocaleString()}</p>
+                            </div>
+                            <span className={`text-xs px-3 py-1 rounded-full font-medium ${appointment.status === 'confirmed' ? 'bg-secondary/20 text-secondary' : appointment.status === 'requested' ? 'bg-warning/20 text-warning' : 'bg-destructive/20 text-destructive'}`}>{appointment.status}</span>
+                          </div>
+                          <p className="text-sm"><strong>Reason:</strong> {appointment.reason || 'No reason provided'}</p>
+                          {appointment.notes && <p className="mt-1 text-sm text-muted-foreground"><strong>Doctor note:</strong> {appointment.notes}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

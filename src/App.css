@@ -1,42 +1,43 @@
+/* Remove restrictive layout for full-screen rendering */
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  width: 100%;
+  height: 100%;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+/* Medical App Custom Styles */
+.hero-gradient {
+  background: linear-gradient(135deg, hsl(200 94% 10% / 0.3) 0%, hsl(200 94% 28% / 0.2) 50%, hsl(200 80% 45% / 0.1) 100%);
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
+.medical-card {
+  @apply bg-card rounded-lg p-6 shadow-card hover:shadow-hover transition-all duration-300 border border-border;
+}
+
+.ecg-path {
+  animation: ecg-pulse 2s ease-in-out infinite;
+}
+
+@keyframes ecg-pulse {
+  0%, 100% {
+    opacity: 0.3;
   }
-  to {
-    transform: rotate(360deg);
+  50% {
+    opacity: 1;
   }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+/* Badge Styles */
+.badge-hypo {
+  @apply bg-accent text-accent-foreground;
 }
 
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
+.badge-hyper {
+  @apply bg-warning/20 text-warning;
 }

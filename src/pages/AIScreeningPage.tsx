@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { Brain, CheckCircle2, AlertTriangle, XCircle, Loader2, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
-import { supabase } from '@/integrations/supabase/client';
 import PublicNav from '@/components/PublicNav';
 import PublicFooter from '@/components/PublicFooter';
 
@@ -20,6 +20,13 @@ interface FormData {
   previousThyroid: string;
   hairLoss: string;
   anxiety: string;
+  drySkin: string;
+  constipation: string;
+  diarrhea: string;
+  irregularPeriods: string;
+  muscleWeakness: string;
+  jointPain: string;
+  depression: string;
 }
 
 interface Result {
@@ -60,6 +67,13 @@ const AIScreeningPage: React.FC = () => {
     previousThyroid: 'no',
     hairLoss: 'no',
     anxiety: 'no',
+    drySkin: 'no',
+    constipation: 'no',
+    diarrhea: 'no',
+    irregularPeriods: 'no',
+    muscleWeakness: 'no',
+    jointPain: 'no',
+    depression: 'no',
   });
   const [result, setResult] = useState<Result | null>(null);
   const [loading, setLoading] = useState(false);
@@ -73,12 +87,23 @@ const AIScreeningPage: React.FC = () => {
     setResult(null);
 
     try {
-      const response = await supabase.functions.invoke('thyroid-ai-screening', {
-        body: { symptoms: form },
+      const response = await fetch('http://localhost:3001/api/symptom-screening', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symptoms: form }),
       });
 
-      if (response.error) throw response.error;
-      setResult(response.data as Result);
+      if (response.ok) {
+        const data = await response.json();
+        const normalizedData = 'risk' in data ? data : {
+          ...data,
+          risk: data.riskLevel?.toLowerCase() as 'low' | 'moderate' | 'high' || 'low',
+          symptoms_noted: data.riskFactors || data.symptoms || [],
+        };
+        setResult(normalizedData);
+      } else {
+        throw new Error('Screening failed');
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Screening failed. Please try again.';
       // Fallback to rule-based result
@@ -93,19 +118,27 @@ const AIScreeningPage: React.FC = () => {
   const calculateRuleBasedRisk = (f: FormData): Result => {
     let score = 0;
     const noted: string[] = [];
-    if (f.neckSwelling === 'yes') { score += 3; noted.push('Neck swelling'); }
-    if (f.previousThyroid === 'yes') { score += 3; noted.push('Previous thyroid condition'); }
-    if (f.weightChange !== 'none') { score += 2; noted.push(`Unexplained weight ${f.weightChange}`); }
-    if (f.heartRate !== 'normal') { score += 2; noted.push(`${f.heartRate} heart rate`); }
-    if (f.temperatureSensitivity !== 'none') { score += 2; noted.push(`Sensitivity to ${f.temperatureSensitivity}`); }
-    if (f.tirednessLevel[0] >= 7) { score += 2; noted.push('High fatigue level'); }
-    if (f.hairLoss === 'yes') { score += 1; noted.push('Hair loss'); }
-    if (f.anxiety === 'yes') { score += 1; noted.push('Anxiety/nervousness'); }
-    if (parseInt(f.age) > 60) score += 1;
+    if (f.neckSwelling === 'yes') { score += 16; noted.push('Neck swelling or lump'); }
+    if (f.previousThyroid === 'yes') { score += 15; noted.push('Previous thyroid diagnosis'); }
+    if (f.weightChange === 'gain' || f.weightChange === 'loss') { score += 12; noted.push(`Unexplained weight ${f.weightChange}`); }
+    if (f.heartRate !== 'normal') { score += 10; noted.push(`${f.heartRate} heart rate`); }
+    if (f.temperatureSensitivity !== 'none') { score += 10; noted.push(`${f.temperatureSensitivity} intolerance`); }
+    if (f.tirednessLevel[0] >= 7) { score += 10; noted.push('High fatigue level'); }
+    if (f.hairLoss === 'yes') { score += 8; noted.push('Hair loss'); }
+    if (f.anxiety === 'yes') { score += 6; noted.push('Anxiety or nervousness'); }
+    if (f.drySkin === 'yes') { score += 6; noted.push('Dry skin'); }
+    if (f.constipation === 'yes') { score += 6; noted.push('Constipation'); }
+    if (f.diarrhea === 'yes') { score += 6; noted.push('Diarrhea'); }
+    if (f.irregularPeriods === 'yes') { score += 6; noted.push('Irregular periods'); }
+    if (f.muscleWeakness === 'yes') { score += 6; noted.push('Muscle weakness'); }
+    if (f.jointPain === 'yes') { score += 6; noted.push('Joint or muscle pain'); }
+    if (f.depression === 'yes') { score += 6; noted.push('Depression or low mood'); }
+    if (parseInt(f.age) >= 60) { score += 8; noted.push('Age 60 or older'); }
 
-    if (score >= 7) return { risk: 'high', confidence: 78, symptoms_noted: noted, message: 'Your responses suggest a higher likelihood of thyroid-related symptoms.', recommendation: 'Please consult a healthcare professional soon and request thyroid function tests (TSH, T3, T4).' };
-    if (score >= 4) return { risk: 'moderate', confidence: 62, symptoms_noted: noted, message: 'Some of your responses align with symptoms associated with thyroid disorders.', recommendation: 'Consider scheduling a check-up with your doctor to discuss thyroid testing.' };
-    return { risk: 'low', confidence: 85, symptoms_noted: noted, message: 'Your current responses do not strongly suggest thyroid disorder symptoms.', recommendation: 'Maintain a healthy lifestyle and attend regular check-ups, especially if you are in a higher-risk group.' };
+    const confidence = Math.min(95, 50 + score * 1.2);
+    if (score >= 60) return { risk: 'high', confidence, symptoms_noted: noted, message: 'Your responses suggest a higher likelihood of thyroid-related symptoms.', recommendation: 'Please consult a healthcare professional soon and request thyroid function tests (TSH, T3, T4).' };
+    if (score >= 30) return { risk: 'moderate', confidence, symptoms_noted: noted, message: 'Some of your responses align with symptoms associated with thyroid disorders.', recommendation: 'Consider scheduling a check-up with your doctor to discuss thyroid testing.' };
+    return { risk: 'low', confidence, symptoms_noted: noted, message: 'Your current responses do not strongly suggest thyroid disorder symptoms.', recommendation: 'Maintain a healthy lifestyle and attend regular check-ups, especially if you are in a higher-risk group.' };
   };
 
   const riskConfig = {
@@ -138,15 +171,14 @@ const AIScreeningPage: React.FC = () => {
                 <div className="grid grid-cols-2 gap-6">
                   <div>
                     <Label className="mb-2 block font-medium">Age</Label>
-                    <Select value={form.age} onValueChange={(v) => setForm({ ...form, age: v })}>
-                      <SelectTrigger><SelectValue placeholder="Select age range" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="18">Under 25</SelectItem>
-                        <SelectItem value="30">25–40</SelectItem>
-                        <SelectItem value="50">41–60</SelectItem>
-                        <SelectItem value="65">Over 60</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Input
+                      type="number"
+                      min={10}
+                      max={120}
+                      placeholder="Enter your age"
+                      value={form.age}
+                      onChange={(e) => setForm({ ...form, age: e.target.value })}
+                    />
                   </div>
                   <div>
                     <Label className="mb-2 block font-medium">Biological Sex</Label>
@@ -213,8 +245,15 @@ const AIScreeningPage: React.FC = () => {
                     { key: 'previousThyroid', label: 'Have you been diagnosed with thyroid disease before?' },
                     { key: 'hairLoss', label: 'Are you experiencing unusual hair loss or thinning?' },
                     { key: 'anxiety', label: 'Do you experience unexplained anxiety, tremors, or nervousness?' },
+                    { key: 'drySkin', label: 'Do you have dry or coarse skin?' },
+                    { key: 'constipation', label: 'Are you experiencing frequent constipation?' },
+                    { key: 'diarrhea', label: 'Are you having frequent diarrhea?' },
+                    { key: 'irregularPeriods', label: 'Do you have irregular menstrual cycles?' },
+                    { key: 'muscleWeakness', label: 'Do you feel muscle weakness or stiffness?' },
+                    { key: 'jointPain', label: 'Do you have joint or muscle pain?' },
+                    { key: 'depression', label: 'Do you feel more depressed or low than usual?' },
                   ].map(({ key, label }) => (
-                    <div key={key} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                    <div key={key} className="flex flex-col gap-3 p-3 rounded-lg bg-muted/50">
                       <span className="text-sm font-medium">{label}</span>
                       <RadioGroup
                         value={form[key as keyof FormData] as string}

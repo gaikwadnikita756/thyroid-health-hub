@@ -1,0 +1,166 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id        String     @id @default(cuid())
+  email     String     @unique
+  fullName  String
+  password  String
+  role      UserRole   @relation(fields: [roleId], references: [id])
+  roleId    String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  // Relations
+  patient   Patient?
+  doctor    Doctor?
+  admin     Admin?
+
+  @@map("users")
+}
+
+model UserRole {
+  id    String   @id @default(cuid())
+  name  String   @unique // 'patient', 'doctor', 'admin'
+  users User[]
+
+  @@map("user_roles")
+}
+
+model Patient {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  age          Int?
+  gender       String?
+  bloodType    String?
+  phoneNumber  String?
+  address      String?
+  city         String?
+  state        String?
+  zipCode      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  screenings   HealthScreening[]
+  symptoms     Symptom[]
+  tests        MedicalTest[]
+  appointments Appointment[]
+
+  @@map("patients")
+}
+
+model Doctor {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specialization String?
+  licenseNumber  String   @unique
+  phoneNumber    String?
+  address        String?
+  city           String?
+  state          String?
+  zipCode        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  appointments   Appointment[]
+
+  @@map("doctors")
+}
+
+model Admin {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("admins")
+}
+
+model HealthScreening {
+  id            String   @id @default(cuid())
+  patientId     String
+  patient       Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  screeningDate DateTime
+  symptoms      String   // JSON stringified array of symptoms (stored as TEXT for SQLite)
+  riskLevel     String   // 'low', 'moderate', 'high'
+  recommendation String?
+  aiAnalysis    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("health_screenings")
+}
+
+model Symptom {
+  id        String   @id @default(cuid())
+  patientId String
+  patient   Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  name      String
+  severity  String   // 'mild', 'moderate', 'severe'
+  duration  String?
+  startDate DateTime?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("symptoms")
+}
+
+model MedicalTest {
+  id          String   @id @default(cuid())
+  patientId   String
+  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  testType    String   @default("Lab Report") // 'Lab Report', 'Ultrasound', etc.
+  testDate    DateTime
+  testName    String?
+  result      String?
+  normalRange String?
+  unit        String?
+  // Thyroid hormone levels
+  tsh         Float?   // Thyroid Stimulating Hormone
+  t3          Float?   // Triiodothyronine
+  t4          Float?   // Thyroxine
+  tpoAntibodies Float? // TPO Antibodies
+  // File info
+  filePath    String?  // Path to uploaded file
+  fileName    String?  // Original file name
+  notes       String?
+  // AI Prediction
+  ai_prediction String?  // 'Normal', 'Hypothyroid', 'Hyperthyroid'
+  ai_confidence Int?     // 0-100 confidence percentage
+  ai_notes    String?    // Detailed AI analysis notes
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("medical_tests")
+}
+
+model Appointment {
+  id          String   @id @default(cuid())
+  patientId   String
+  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctorId    String
+  doctor      Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  appointmentDate DateTime
+  reason      String?
+  notes       String?
+  status      String   @default("scheduled") // 'scheduled', 'completed', 'cancelled'
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("appointments")
+}

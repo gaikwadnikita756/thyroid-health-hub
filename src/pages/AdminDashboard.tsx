@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Activity, Users, FileText, BarChart3, Settings, LogOut, LayoutDashboard } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell
@@ -32,41 +31,47 @@ const AdminDashboard: React.FC = () => {
   }, [user]);
 
   const loadAnalytics = async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: reports } = await (supabase as any).from('lab_reports').select('*');
-    if (!reports) return;
+    try {
+      // Fetch all medical tests for analytics
+      const response = await fetch('http://localhost:3001/api/admin/reports');
+      if (!response.ok) return;
 
-    const predictionCounts: Record<string, number> = {};
-    reports.forEach((r: { ai_prediction: string | null }) => {
-      const p = r.ai_prediction || 'Pending';
-      predictionCounts[p] = (predictionCounts[p] || 0) + 1;
-    });
+      const reports = await response.json();
 
-    const colors: Record<string, string> = {
-      Normal: 'hsl(142 52% 44%)',
-      Hypothyroid: 'hsl(200 94% 40%)',
-      Hyperthyroid: 'hsl(38 92% 50%)',
-      Pending: 'hsl(215 15% 55%)',
-    };
+      const predictionCounts: Record<string, number> = {};
+      reports.forEach((r: { ai_prediction: string | null }) => {
+        const p = r.ai_prediction || 'Pending';
+        predictionCounts[p] = (predictionCounts[p] || 0) + 1;
+      });
 
-    // Last 7 days activity
-    const activityMap: Record<string, number> = {};
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      activityMap[d.toLocaleDateString('en-US', { weekday: 'short' })] = 0;
+      const colors: Record<string, string> = {
+        Normal: 'hsl(142 52% 44%)',
+        Hypothyroid: 'hsl(200 94% 40%)',
+        Hyperthyroid: 'hsl(38 92% 50%)',
+        Pending: 'hsl(215 15% 55%)',
+      };
+
+      // Last 7 days activity
+      const activityMap: Record<string, number> = {};
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        activityMap[d.toLocaleDateString('en-US', { weekday: 'short' })] = 0;
+      }
+      reports.forEach((r: { createdAt: string }) => {
+        const d = new Date(r.createdAt);
+        const key = d.toLocaleDateString('en-US', { weekday: 'short' });
+        if (key in activityMap) activityMap[key]++;
+      });
+
+      setAnalytics({
+        totalReports: reports.length,
+        byPrediction: Object.entries(predictionCounts).map(([name, value]) => ({ name, value, color: colors[name] || '#888' })),
+        recentActivity: Object.entries(activityMap).map(([date, reports]) => ({ date, reports })),
+      });
+    } catch (error) {
+      console.error('Error loading analytics:', error);
     }
-    reports.forEach((r: { created_at: string }) => {
-      const d = new Date(r.created_at);
-      const key = d.toLocaleDateString('en-US', { weekday: 'short' });
-      if (key in activityMap) activityMap[key]++;
-    });
-
-    setAnalytics({
-      totalReports: reports.length,
-      byPrediction: Object.entries(predictionCounts).map(([name, value]) => ({ name, value, color: colors[name] || '#888' })),
-      recentActivity: Object.entries(activityMap).map(([date, reports]) => ({ date, reports })),
-    });
   };
 
   const navItems = [

@@ -1,87 +1,120 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import type { User, Session } from '@supabase/supabase-js';
 
 type UserRole = 'patient' | 'doctor' | 'admin' | null;
 
+interface User {
+  id: string;
+  email: string;
+  fullName: string;
+}
+
+interface AuthResult {
+  error: Error | null;
+  user?: User;
+  role?: UserRole;
+}
+
 interface AuthContextType {
   user: User | null;
-  session: Session | null;
   role: UserRole;
   loading: boolean;
-  signUp: (email: string, password: string, fullName: string, role: 'patient' | 'doctor') => Promise<{ error: Error | null }>;
-  signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signUp: (email: string, password: string, fullName: string, role: 'patient' | 'doctor') => Promise<AuthResult>;
+  signIn: (email: string, password: string) => Promise<AuthResult>;
   signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const API_URL = 'http://localhost:3001/api';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
   const [role, setRole] = useState<UserRole>(null);
-  const [loading, setLoading] = useState(true);
-
-  const fetchRole = async (userId: string) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any)
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', userId)
-      .single();
-    setRole((data?.role as UserRole) || 'patient');
-  };
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          await fetchRole(session.user.id);
-        } else {
-          setRole(null);
-        }
-        setLoading(false);
-      }
-    );
+    const storedUser = localStorage.getItem('user');
+    const storedRole = localStorage.getItem('role');
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchRole(session.user.id);
-      } else {
-        setLoading(false);
+    if (storedUser) {
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch {
+        localStorage.removeItem('user');
       }
-    });
+    }
 
-    return () => subscription.unsubscribe();
+    if (storedRole) {
+      setRole(storedRole as UserRole);
+    }
   }, []);
 
   const signUp = async (email: string, password: string, fullName: string, userRole: 'patient' | 'doctor') => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName, role: userRole },
-        emailRedirectTo: window.location.origin,
-      },
-    });
-    return { error };
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_URL}/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, fullName, role: userRole }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        return { error: new Error(data.error || 'Registration failed') };
+      }
+
+      const userData = await response.json();
+      const authUser = { id: userData.id, email: userData.email, fullName: userData.fullName };
+      const authRole = userData.role?.name || userRole;
+      setUser(authUser);
+      setRole(authRole);
+      localStorage.setItem('user', JSON.stringify(authUser));
+      localStorage.setItem('role', authRole);
+      return { error: null, user: authUser, role: authRole };
+    } catch (error) {
+      return { error: error instanceof Error ? error : new Error('Registration failed') };
+    } finally {
+      setLoading(false);
+    }
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error };
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_URL}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        return { error: new Error(data.error || 'Login failed') };
+      }
+
+      const userData = await response.json();
+      const authUser = { id: userData.id, email: userData.email, fullName: userData.fullName };
+      const authRole = userData.role?.name || null;
+      setUser(authUser);
+      setRole(authRole);
+      localStorage.setItem('user', JSON.stringify(authUser));
+      localStorage.setItem('role', authRole || '');
+      return { error: null, user: authUser, role: authRole };
+    } catch (error) {
+      return { error: error instanceof Error ? error : new Error('Login failed') };
+    } finally {
+      setLoading(false);
+    }
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    setUser(null);
+    setRole(null);
+    localStorage.removeItem('user');
+    localStorage.removeItem('role');
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, role, loading, signUp, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, role, loading, signUp, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );

@@ -25,13 +25,14 @@ const RegisterPage: React.FC = () => {
       return;
     }
     setLoading(true);
-    const { error } = await signUp(email, password, fullName, role);
+    const { error, role: signedRole } = await signUp(email, password, fullName, role);
     setLoading(false);
     if (error) {
       toast({ title: 'Registration failed', description: error.message, variant: 'destructive' });
     } else {
-      toast({ title: 'Account created!', description: 'Please check your email to confirm your account.' });
-      navigate('/login');
+      toast({ title: 'Account created!' });
+      if (signedRole === 'doctor') navigate('/doctor/dashboard');
+      else navigate('/patient/dashboard');
     }
   };
 

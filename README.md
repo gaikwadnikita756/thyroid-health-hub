@@ -1,73 +1,63 @@
-# Welcome to your Lovable project
+# Thyroid Health Hub
 
-## Project info
+A web application to help patients and clinicians manage thyroid-related health information, appointments, screenings, and reports.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Features
 
-## How can I edit this code?
+- Patient and doctor dashboards
+- Appointment booking and management
+- AI-assisted screening endpoints
+- Report uploads and viewing
+- Auth with role-based access
 
-There are several ways of editing your application.
+## Tech stack
 
-**Use Lovable**
+- Frontend: React, TypeScript, Vite, Tailwind CSS, shadcn-ui
+- Backend: Node.js, Express (server folder), Prisma (Postgres)
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+## Getting started
 
-Changes made via Lovable will be committed automatically to this repo.
+Prerequisites:
 
-**Use your preferred IDE**
+- Node.js 18+ and npm or yarn
+- PostgreSQL (or use the provided connection in `server/prisma.ts`)
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+Quick start:
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+```bash
+# from repo root
+cd thyroid-health-hub
+npm install
+# start frontend dev server
+npm run dev
+# in another terminal: start backend
+cd server
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Database (Prisma):
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```bash
+# run migrations and seed (from repo root)
+npx prisma migrate deploy
+node prisma/seed.ts
+```
 
-**Use GitHub Codespaces**
+## Run tests
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+```bash
+npm test
+```
 
-## What technologies are used for this project?
+## Contributing
 
-This project is built with:
+Contributions are welcome. Please open issues or pull requests on the repository.
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+## License
 
-## How can I deploy this project?
+This project is provided as-is. Add a license file if you want to clarify terms.
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+## Repository
 
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+Remote: https://github.com/gaikwadnikita756/thyroid-health-hub
